@@ -514,38 +514,91 @@
   }
 
   // ── COMPASS ───────────────────────────────────────────────
-  function startCompass() {
-    if (typeof DeviceOrientationEvent === 'undefined') {
-      noCompass.style.display = 'block';
-      return;
+  function onHeading(h) {
+    hasCompass = true;
+    compassHeading = h;
+    noCompass.style.display = 'none';
+    updateUI();
+  }
+
+  // Kaedah 1: AbsoluteOrientationSensor (Android Chrome — paling reliable)
+  async function tryAbsoluteSensor() {
+    if (!('AbsoluteOrientationSensor' in window)) return false;
+    try {
+      // Request permissions
+      const perms = await Promise.all([
+        navigator.permissions.query({ name: 'accelerometer' }),
+        navigator.permissions.query({ name: 'magnetometer' }),
+        navigator.permissions.query({ name: 'gyroscope' })
+      ]);
+      if (perms.some(p => p.state === 'denied')) return false;
+
+      const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'screen' });
+
+      sensor.addEventListener('error', () => {});
+      sensor.addEventListener('reading', () => {
+        // Convert quaternion → heading (yaw)
+        const q = sensor.quaternion; // [x, y, z, w]
+        const heading = Math.atan2(
+          2 * (q[3]*q[2] + q[0]*q[1]),
+          1 - 2 * (q[1]*q[1] + q[2]*q[2])
+        ) * 180 / Math.PI;
+        onHeading((360 - ((heading + 360) % 360)) % 360);
+      });
+
+      sensor.start();
+      setStatus('Kompas aktif (Sensor API)', 'ok');
+      return true;
+    } catch(e) {
+      return false;
     }
+  }
+
+  // Kaedah 2 & 3: DeviceOrientation events
+  function tryDeviceOrientation() {
+    let gotData = false;
 
     const handler = (e) => {
       let heading = null;
 
       // iOS: webkitCompassHeading
-      if (e.webkitCompassHeading !== undefined) {
+      if (typeof e.webkitCompassHeading === 'number') {
         heading = e.webkitCompassHeading;
-      } else if (e.alpha !== null) {
-        // Android: alpha = rotation around Z axis (0=North on some devices)
+      }
+      // Android absolute: alpha bukan null
+      else if (e.alpha !== null && e.alpha !== undefined) {
         heading = (360 - e.alpha) % 360;
       }
 
       if (heading !== null) {
-        hasCompass = true;
-        compassHeading = heading;
-        noCompass.style.display = 'none';
-        updateUI();
+        gotData = true;
+        onHeading(heading);
       }
     };
 
+    // Cuba absolute dulu (lebih tepat)
     window.addEventListener('deviceorientationabsolute', handler, true);
     window.addEventListener('deviceorientation', handler, true);
 
-    // Timeout: if no compass data after 3s
+    // Timeout check
+    setTimeout(() => {
+      if (!gotData && !hasCompass) {
+        noCompass.style.display = 'block';
+        setStatus('GPS aktif — kompas tidak tersedia', 'warn');
+      }
+    }, 4000);
+  }
+
+  async function startCompass() {
+    // Cuba AbsoluteOrientationSensor dulu
+    const sensorOk = await tryAbsoluteSensor();
+    // Kalau gagal, fallback ke DeviceOrientation
+    if (!sensorOk) tryDeviceOrientation();
+
+    // Timeout global
     setTimeout(() => {
       if (!hasCompass) noCompass.style.display = 'block';
-    }, 3000);
+    }, 5000);
   }
 
   // ── PERMISSIONS (iOS 13+) ──────────────────────────────────
