@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compass Debug</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; padding: 20px; font-size: 14px; }
+  h2 { color: #ff0; margin-bottom: 16px; }
+  .row { margin: 6px 0; padding: 8px; background: #1a1a1a; border-radius: 4px; }
+  .label { color: #888; }
+  .val { color: #0f0; font-weight: bold; }
+  .warn { color: #f80; }
+  .err { color: #f00; }
+  #log { margin-top: 20px; max-height: 300px; overflow-y: auto; background: #0a0a0a; padding: 10px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2>🔧 COMPASS DEBUG</h2>
+
+<div class="row"><span class="label">deviceorientation: </span><span id="do-status" class="warn">belum...</span></div>
+<div class="row"><span class="label">deviceorientationabsolute: </span><span id="doa-status" class="warn">belum...</span></div>
+<div class="row"><span class="label">alpha (Z): </span><span id="alpha" class="val">--</span></div>
+<div class="row"><span class="label">beta (X): </span><span id="beta" class="val">--</span></div>
+<div class="row"><span class="label">gamma (Y): </span><span id="gamma" class="val">--</span></div>
+<div class="row"><span class="label">webkitCompassHeading: </span><span id="webkit" class="val">--</span></div>
+<div class="row"><span class="label">absolute flag: </span><span id="abs-flag" class="val">--</span></div>
+<div class="row"><span class="label">Heading dikira: </span><span id="heading" class="val">--</span></div>
+<div class="row"><span class="label">requestPermission API: </span><span id="req-perm" class="val">--</span></div>
+
+<button onclick="reqPerm()" style="margin-top:16px;padding:12px 24px;background:#f00;color:#fff;border:none;font-size:16px;border-radius:6px;cursor:pointer;">
+  REQUEST PERMISSION (iOS)
+</button>
+
+<div id="log"></div>
+
+<script>
+  function log(msg, type='') {
+    const d = document.getElementById('log');
+    const t = new Date().toLocaleTimeString();
+    d.innerHTML = `<div class="${type}">[${t}] ${msg}</div>` + d.innerHTML;
+  }
+
+  // Check requestPermission availability
+  const hasReqPerm = typeof DeviceOrientationEvent !== 'undefined' &&
+                     typeof DeviceOrientationEvent.requestPermission === 'function';
+  document.getElementById('req-perm').textContent = hasReqPerm ? 'ADA (iOS)' : 'TIADA (Android/Desktop)';
+
+  // deviceorientation
+  window.addEventListener('deviceorientation', (e) => {
+    document.getElementById('do-status').textContent = 'AKTIF ✓';
+    document.getElementById('do-status').className = 'val';
+    document.getElementById('alpha').textContent = e.alpha !== null ? e.alpha.toFixed(2) : 'null';
+    document.getElementById('beta').textContent  = e.beta  !== null ? e.beta.toFixed(2)  : 'null';
+    document.getElementById('gamma').textContent = e.gamma !== null ? e.gamma.toFixed(2) : 'null';
+    document.getElementById('webkit').textContent = e.webkitCompassHeading !== undefined
+      ? e.webkitCompassHeading.toFixed(2) : 'undefined';
+    document.getElementById('abs-flag').textContent = e.absolute ? 'true' : 'false';
+
+    let heading = null;
+    if (e.webkitCompassHeading !== undefined) heading = e.webkitCompassHeading;
+    else if (e.alpha !== null) heading = (360 - e.alpha) % 360;
+    document.getElementById('heading').textContent = heading !== null ? heading.toFixed(1) + '°' : 'null';
+
+    log(`deviceorientation: alpha=${e.alpha?.toFixed(1)} webkit=${e.webkitCompassHeading?.toFixed(1)} abs=${e.absolute}`);
+  }, true);
+
+  // deviceorientationabsolute
+  window.addEventListener('deviceorientationabsolute', (e) => {
+    document.getElementById('doa-status').textContent = 'AKTIF ✓';
+    document.getElementById('doa-status').className = 'val';
+    log(`deviceorientationabsolute: alpha=${e.alpha?.toFixed(1)}`, 'val');
+  }, true);
+
+  async function reqPerm() {
+    if (!hasReqPerm) { log('requestPermission tidak tersedia — bukan iOS', 'warn'); return; }
+    try {
+      const result = await DeviceOrientationEvent.requestPermission();
+      log('Permission result: ' + result, result === 'granted' ? 'val' : 'err');
+    } catch(e) {
+      log('Permission error: ' + e.message, 'err');
+    }
+  }
+
+  // Timeout check
+  setTimeout(() => {
+    if (document.getElementById('do-status').textContent === 'belum...') {
+      document.getElementById('do-status').textContent = 'TIADA RESPONSE';
+      document.getElementById('do-status').className = 'err';
+      log('deviceorientation: tiada response selepas 5s', 'err');
+    }
+  }, 5000);
+
+  log('Debug page loaded. Tunggu sensor data...');
+</script>
+</body>
+</html>
